@@ -1,10 +1,16 @@
 from pydantic import BaseModel
 from typing import Optional
 
-class TodoCreate(BaseModel):
+class TodoBase(BaseModel):
     title: str
     description: Optional[str] = None
 
-class Todo(TodoCreate):
+class TodoCreate(TodoBase):
+    pass
+
+class Todo(TodoBase):
     id: int
-    completed: bool = False
+    completed: bool
+
+    class Config:
+        orm_mode = True  # important for SQLAlchemy models

@@ -1,48 +1,50 @@
-from fastapi import FastAPI, HTTPException
-from app.schemas import Todo, TodoCreate
-from app.models import todos
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import List
 
-app = FastAPI(title="Todo API")
+from app import models, schemas
+from app.database import engine, get_db
 
-@app.get("/")
-def root():
-    return {"message": "FastAPI Todo App"}
+app = FastAPI(title="FastAPI Todo API with SQLite")
 
-@app.post("/todos", response_model=Todo)
-def create_todo(todo: TodoCreate):
-    new_todo = Todo(
-        id=len(todos) + 1,
-        title=todo.title,
-        description=todo.description,
-        completed=False
-    )
-    todos.append(new_todo)
-    return new_todo
+# Create database tables
+models.Base.metadata.create_all(bind=engine)
 
-@app.get("/todos", response_model=list[Todo])
-def get_todos():
-    return todos
+@app.post("/todos", response_model=schemas.Todo)
+def create_todo(todo: schemas.TodoCreate, db: Session = Depends(get_db)):
+    db_todo = models.Todo(title=todo.title, description=todo.description)
+    db.add(db_todo)
+    db.commit()
+    db.refresh(db_todo)
+    return db_todo
 
-@app.get("/todos/{todo_id}", response_model=Todo)
-def get_todo(todo_id: int):
-    for todo in todos:
-        if todo.id == todo_id:
-            return todo
-    raise HTTPException(status_code=404, detail="Todo not found")
+@app.get("/todos", response_model=List[schemas.Todo])
+def get_todos(db: Session = Depends(get_db)):
+    return db.query(models.Todo).all()
 
-@app.put("/todos/{todo_id}", response_model=Todo)
-def update_todo(todo_id: int, updated: TodoCreate):
-    for todo in todos:
-        if todo.id == todo_id:
-            todo.title = updated.title
-            todo.description = updated.description
-            return todo
-    raise HTTPException(status_code=404, detail="Todo not found")
+@app.get("/todos/{todo_id}", response_model=schemas.Todo)
+def get_todo(todo_id: int, db: Session = Depends(get_db)):
+    todo = db.query(models.Todo).filter(models.Todo.id == todo_id).first()
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    return todo
+
+@app.put("/todos/{todo_id}", response_model=schemas.Todo)
+def update_todo(todo_id: int, updated: schemas.TodoCreate, db: Session = Depends(get_db)):
+    todo = db.query(models.Todo).filter(models.Todo.id == todo_id).first()
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    todo.title = updated.title
+    todo.description = updated.description
+    db.commit()
+    db.refresh(todo)
+    return todo
 
 @app.delete("/todos/{todo_id}")
-def delete_todo(todo_id: int):
-    for todo in todos:
-        if todo.id == todo_id:
-            todos.remove(todo)
-            return {"message": "Todo deleted"}
-    raise HTTPException(status_code=404, detail="Todo not found")
+def delete_todo(todo_id: int, db: Session = Depends(get_db)):
+    todo = db.query(models.Todo).filter(models.Todo.id == todo_id).first()
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    db.delete(todo)
+    db.commit()
+    return {"message": "Todo deleted"}
